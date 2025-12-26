@@ -1,0 +1,5 @@
+{
+  "name": "easylevels",
+  "description": "A Figma-inspired DXF viewer that handles 2D representation with interactive 3D coordinate inspection and AI-powered geometric analysis.",
+  "requestFramePermissions": []
+}

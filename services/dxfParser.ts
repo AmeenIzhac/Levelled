@@ -21,9 +21,20 @@ export const parseDxfFile = async (file: File): Promise<DxfData> => {
 
   // Extract layer colors from tables
   const layerColors: Record<string, number> = {};
+  const layerTrueColors: Record<string, number> = {};
   if (dxf.tables && dxf.tables.layer && dxf.tables.layer.layers) {
     Object.values(dxf.tables.layer.layers).forEach((layer: any) => {
       layerColors[layer.name] = layer.color;
+
+      // Check multiple possible property names for True Color
+      let layerTC = layer.trueColor ?? layer.truecolor ?? layer.color24bit ?? layer.TRUECOLOR;
+      if (layerTC !== undefined) {
+        // Handle negative values
+        if (layerTC < 0) {
+          layerTC = Math.abs(layerTC) & 0xFFFFFF;
+        }
+        layerTrueColors[layer.name] = layerTC;
+      }
     });
   }
 
@@ -56,7 +67,8 @@ export const parseDxfFile = async (file: File): Promise<DxfData> => {
     return {
       x: p.x - medianX,
       y: p.y - medianY,
-      z: p.z || 0
+      z: p.z || 0,
+      bulge: p.bulge
     };
   };
 
@@ -64,7 +76,15 @@ export const parseDxfFile = async (file: File): Promise<DxfData> => {
     const type = e.type;
     const layer = e.layer;
     const color = e.color;
-    
+    // DXF parsers may use different property names for True Color
+    // Also, some DXF files encode true color as negative values
+    let trueColor = e.trueColor ?? e.truecolor ?? e.color24bit ?? e.TRUECOLOR;
+
+    // Handle negative true color values (some DXF formats use this)
+    if (trueColor && trueColor < 0) {
+      trueColor = Math.abs(trueColor) & 0xFFFFFF;
+    }
+
     const shiftedVertices = e.vertices ? e.vertices.map((v: any) => shiftPoint(v)) : undefined;
     const shiftedCenter = shiftPoint(e.center);
     const shiftedStart = shiftPoint(e.vertices ? e.vertices[0] : (e.position || e.start));
@@ -74,6 +94,7 @@ export const parseDxfFile = async (file: File): Promise<DxfData> => {
       type,
       layer,
       color,
+      trueColor,
       vertices: shiftedVertices,
       center: shiftedCenter,
       radius: e.radius,
@@ -118,6 +139,7 @@ export const parseDxfFile = async (file: File): Promise<DxfData> => {
     entities,
     layers,
     layerColors,
+    layerTrueColors,
     bounds: {
       min: { x: minX, y: minY },
       max: { x: maxX, y: maxY },

@@ -1,17 +1,23 @@
-
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { ChevronUp, ChevronDown, Search, X } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
 import { parseDxfFile } from './services/dxfParser';
+import { downloadPythonFormatJson, exportToPythonFormat } from './services/jsonExporter';
 import { DxfData, ViewportState, DrawingTool, DxfEntity } from './types';
 import Toolbar from './components/Toolbar';
 import Sidebar from './components/Sidebar';
 import PropertiesPanel from './components/PropertiesPanel';
 import Canvas from './components/Canvas';
 
+// scan({
+//   enabled: true
+// });
+
 const DEFAULT_DATA: DxfData = {
   entities: [],
   layers: ['User Drawing'],
   layerColors: {},
+  layerTrueColors: {},
   bounds: {
     min: { x: -100, y: -100 },
     max: { x: 100, y: 100 },
@@ -20,6 +26,8 @@ const DEFAULT_DATA: DxfData = {
     height: 200
   }
 };
+
+const ZOOM_LEVELS = [0.1, 0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64, 128, 256, 512];
 
 const App: React.FC = () => {
   const sidebarLeftWidth = 256;
@@ -48,10 +56,57 @@ const App: React.FC = () => {
   const [fileName, setFileName] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [aiMessage, setAiMessage] = useState<string | null>(null);
+  const [jsonPreview, setJsonPreview] = useState<string | null>(null);
+  const [jsonSearch, setJsonSearch] = useState<string>('');
+  const [jsonSearchIndex, setJsonSearchIndex] = useState(0);
+  const jsonSearchRef = useRef<HTMLInputElement>(null);
+  const jsonContainerRef = useRef<HTMLPreElement>(null);
+
+  const jsonMatches = useMemo(() => {
+    if (!jsonPreview || !jsonSearch || jsonSearch.length < 2) return [];
+    const matches: number[] = [];
+    const regex = new RegExp(jsonSearch, 'gi');
+    let match;
+    while ((match = regex.exec(jsonPreview)) !== null) {
+      matches.push(match.index);
+    }
+    return matches;
+  }, [jsonPreview, jsonSearch]);
+
+  useEffect(() => {
+    if (jsonMatches.length > 0 && jsonSearchIndex >= jsonMatches.length) {
+      setJsonSearchIndex(0);
+    }
+  }, [jsonMatches, jsonSearchIndex]);
+
+  useEffect(() => {
+    if (jsonMatches.length > 0 && jsonContainerRef.current) {
+      const activeMatch = jsonContainerRef.current.querySelector('[data-search-match="active"]');
+      if (activeMatch) {
+        activeMatch.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+  }, [jsonSearchIndex, jsonMatches]);
 
   const resetView = useCallback(() => {
     setViewport(getStandardViewport());
   }, [getStandardViewport]);
+
+  // Escape key to deselect
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (jsonPreview) setJsonPreview(null);
+        else setSelectedId(null);
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'f' && jsonPreview) {
+        e.preventDefault();
+        jsonSearchRef.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [jsonPreview]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -59,20 +114,50 @@ const App: React.FC = () => {
 
     try {
       setFileName(file.name);
-      const parsedData = await parseDxfFile(file);
-      
-      setData(prev => ({
-        ...parsedData,
-        entities: [...prev.entities, ...parsedData.entities],
-        layers: Array.from(new Set([...prev.layers, ...parsedData.layers])),
-        layerColors: { ...prev.layerColors, ...parsedData.layerColors }
-      }));
-      
+
+      if (file.name.toLowerCase().endsWith('.json')) {
+        const text = await file.text();
+        const jsonData = JSON.parse(text) as DxfData;
+
+        // Simple validation to check if it's our format
+        if (!jsonData.entities || !jsonData.layers) {
+          throw new Error('Invalid JSON format for CAD Explorer.');
+        }
+
+        setData(jsonData);
+      } else {
+        const parsedData = await parseDxfFile(file);
+
+        setData(prev => ({
+          ...parsedData,
+          entities: [...prev.entities, ...parsedData.entities],
+          layers: Array.from(new Set([...prev.layers, ...parsedData.layers])),
+          layerColors: { ...prev.layerColors, ...parsedData.layerColors }
+        }));
+      }
+
       resetView();
       setSelectedId(null);
     } catch (err) {
       console.error(err);
-      alert('Failed to parse DXF file.');
+      alert('Failed to parse file: ' + (err instanceof Error ? err.message : 'Unknown error'));
+    }
+  };
+
+  const handleExportJSON = () => {
+    downloadPythonFormatJson(data, fileName ?? undefined);
+  };
+
+  const handleViewJSON = () => {
+    const exportData = exportToPythonFormat(data, fileName ?? undefined);
+    setJsonPreview(JSON.stringify(exportData, null, 2));
+    setJsonSearch('');
+    setJsonSearchIndex(0);
+  };
+
+  const handleCopyJSON = () => {
+    if (jsonPreview) {
+      navigator.clipboard.writeText(jsonPreview);
     }
   };
 
@@ -102,7 +187,7 @@ const App: React.FC = () => {
     setIsAnalyzing(true);
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const prompt = `Analyze this CAD entity: ${entity.type} on layer ${entity.layer}. Geometry: ${JSON.stringify(entity.vertices || {center: entity.center, radius: entity.radius})}. Explain its function in a professional blueprint context.`;
+      const prompt = `Analyze this CAD entity: ${entity.type} on layer ${entity.layer}. Geometry: ${JSON.stringify(entity.vertices || { center: entity.center, radius: entity.radius })}. Explain its function in a professional blueprint context.`;
       const result = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: prompt,
@@ -117,21 +202,27 @@ const App: React.FC = () => {
 
   return (
     <div className="h-screen w-screen flex flex-col bg-[#0f0f0f] overflow-hidden text-[#e5e7eb]">
-      <Toolbar 
-        onFileUpload={handleFileUpload} tool={tool} setTool={setTool}
-        onZoomIn={() => setViewport(v => ({ ...v, scale: v.scale * 1.5 }))}
-        onZoomOut={() => setViewport(v => ({ ...v, scale: v.scale / 1.5 }))}
-        onResetView={resetView} onClear={handleClear} fileName={fileName}
+      <Toolbar
+        onFileUpload={handleFileUpload}
+        tool={tool}
+        setTool={setTool}
+        onClear={handleClear}
+        onExportJSON={handleExportJSON}
+        onViewJSON={handleViewJSON}
+        fileName={fileName}
       />
       <div className="flex-1 flex overflow-hidden">
         <Sidebar data={data} selectedId={selectedId} onSelect={setSelectedId} />
-        <Canvas 
+        <Canvas
           data={data} viewport={viewport} setViewport={setViewport}
           selectedId={selectedId} onSelect={setSelectedId} tool={tool} onAddEntity={handleAddEntity}
         />
-        <PropertiesPanel 
+        <PropertiesPanel
           selectedEntity={data.entities.find(e => e.id === selectedId) || null}
-          onAIAssist={handleAIAssist} isAnalyzing={isAnalyzing}
+          onAIAssist={handleAIAssist}
+          isAnalyzing={isAnalyzing}
+          layerColors={data.layerColors}
+          layerTrueColors={data.layerTrueColors}
         />
       </div>
       {aiMessage && (
@@ -144,6 +235,109 @@ const App: React.FC = () => {
             <div className="p-6 text-sm leading-relaxed text-gray-300 max-h-[60vh] overflow-y-auto whitespace-pre-wrap selection:bg-blue-500/30">{aiMessage}</div>
             <div className="p-4 bg-[#1a1a1a] border-t border-[#333] flex justify-end">
               <button onClick={() => setAiMessage(null)} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-md transition-colors shadow-lg active:scale-95">Dismiss</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {jsonPreview && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
+          <div className="bg-[#1e1e1e] border border-green-500/30 rounded-xl max-w-5xl w-full max-h-[90vh] shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200 flex flex-col relative">
+            <div className="p-4 border-b border-[#333] flex justify-between items-center bg-gradient-to-r from-green-900/20 to-emerald-900/20">
+              <h3 className="text-green-400 font-bold flex items-center gap-2">JSON PREVIEW</h3>
+
+              <div className="flex items-center gap-2">
+                <div className="flex items-center bg-[#2c2c2c] rounded-md border border-[#444] px-2 py-1 focus-within:border-green-500/50 transition-colors">
+                  <Search size={14} className="text-gray-500 mr-2" />
+                  <input
+                    ref={jsonSearchRef}
+                    type="text"
+                    placeholder="Find in JSON..."
+                    value={jsonSearch}
+                    onChange={e => {
+                      setJsonSearch(e.target.value);
+                      setJsonSearchIndex(0);
+                    }}
+                    className="bg-transparent border-none outline-none text-xs text-gray-200 w-40"
+                  />
+                  {jsonSearch && (
+                    <div className="flex items-center gap-1 ml-2 border-l border-[#444] pl-2">
+                      <span className="text-[10px] text-gray-500 whitespace-nowrap min-w-[40px]">
+                        {jsonMatches.length > 0 ? `${jsonSearchIndex + 1} of ${jsonMatches.length}` : '0 of 0'}
+                      </span>
+                      <button
+                        onClick={() => setJsonSearchIndex(prev => (prev > 0 ? prev - 1 : jsonMatches.length - 1))}
+                        className="p-0.5 hover:bg-[#444] rounded text-gray-400 disabled:opacity-30"
+                        disabled={jsonMatches.length === 0}
+                      >
+                        <ChevronUp size={14} />
+                      </button>
+                      <button
+                        onClick={() => setJsonSearchIndex(prev => (prev < jsonMatches.length - 1 ? prev + 1 : 0))}
+                        className="p-0.5 hover:bg-[#444] rounded text-gray-400 disabled:opacity-30"
+                        disabled={jsonMatches.length === 0}
+                      >
+                        <ChevronDown size={14} />
+                      </button>
+                      <button
+                        onClick={() => { setJsonSearch(''); setJsonSearchIndex(0); }}
+                        className="p-0.5 hover:bg-[#444] rounded text-gray-400 ml-1"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <button onClick={() => setJsonPreview(null)} className="text-gray-500 hover:text-white text-xl ml-4">&times;</button>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-auto p-4 bg-[#141414]">
+              <pre
+                ref={jsonContainerRef}
+                className="text-xs text-gray-300 font-mono whitespace-pre selection:bg-green-500/30 leading-relaxed"
+                dangerouslySetInnerHTML={{
+                  __html: (() => {
+                    if (!jsonSearch || jsonSearch.length < 2) return jsonPreview;
+
+                    let lastIdx = 0;
+                    let html = '';
+                    const regex = new RegExp(jsonSearch, 'gi');
+                    let match;
+                    let i = 0;
+
+                    while ((match = regex.exec(jsonPreview)) !== null) {
+                      const isActive = i === jsonSearchIndex;
+                      html += jsonPreview.slice(lastIdx, match.index);
+                      html += `<mark ${isActive ? 'data-search-match="active"' : ''} class="${isActive ? 'bg-yellow-500 text-black' : 'bg-green-900/50 text-green-200'} rounded-[1px] px-[1px] transition-colors">${match[0]}</mark>`;
+                      lastIdx = regex.lastIndex;
+                      i++;
+                    }
+                    html += jsonPreview.slice(lastIdx);
+                    return html;
+                  })()
+                }}
+              />
+            </div>
+
+            <div className="p-4 bg-[#1a1a1a] border-t border-[#333] flex justify-end gap-2">
+              <button
+                onClick={handleCopyJSON}
+                className="px-4 py-2 bg-[#2c2c2c] hover:bg-[#3c3c3c] text-gray-300 text-xs font-bold rounded-md transition-colors border border-[#444]"
+              >
+                Copy to Clipboard
+              </button>
+              <button
+                onClick={() => { handleExportJSON(); setJsonPreview(null); }}
+                className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-md transition-colors shadow-lg active:scale-95"
+              >
+                Download JSON
+              </button>
+              <button
+                onClick={() => setJsonPreview(null)}
+                className="px-4 py-2 bg-[#2c2c2c] hover:bg-[#3c3c3c] text-gray-300 text-xs font-bold rounded-md transition-colors border border-[#444]"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>

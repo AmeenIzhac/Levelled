@@ -3,6 +3,7 @@ export interface Point {
   x: number;
   y: number;
   z?: number;
+  bulge?: number;
 }
 
 export type EntityType = 'LINE' | 'CIRCLE' | 'ARC' | 'LWPOLYLINE' | 'POLYLINE' | 'RECTANGLE';
@@ -11,6 +12,7 @@ export interface DxfEntity {
   type: EntityType;
   layer: string;
   color?: number;
+  trueColor?: number;
   vertices?: Point[];
   center?: Point;
   radius?: number;
@@ -26,6 +28,7 @@ export interface DxfData {
   entities: DxfEntity[];
   layers: string[];
   layerColors: Record<string, number>;
+  layerTrueColors: Record<string, number>;
   bounds: {
     min: Point;
     max: Point;

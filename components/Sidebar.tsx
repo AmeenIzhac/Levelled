@@ -9,15 +9,16 @@ interface SidebarProps {
   onSelect: (id: string) => void;
 }
 
-const getEntityIcon = (type: string) => {
-  switch (type) {
-    case 'CIRCLE': return <Circle size={14} />;
-    case 'LWPOLYLINE':
-    case 'POLYLINE': return <Square size={14} />;
-    case 'LINE': return <Minus size={14} />;
-    default: return <Hash size={14} />;
-  }
+// Pre-created icon elements - same reference avoids DOM recreation
+const ENTITY_ICONS: Record<string, React.ReactNode> = {
+  CIRCLE: <Circle size={14} />,
+  LWPOLYLINE: <Square size={14} />,
+  POLYLINE: <Square size={14} />,
+  LINE: <Minus size={14} />,
+  DEFAULT: <Hash size={14} />,
 };
+
+const getEntityIcon = (type: string) => ENTITY_ICONS[type] || ENTITY_ICONS.DEFAULT;
 
 const Sidebar: React.FC<SidebarProps> = ({ data, selectedId, onSelect }) => {
   if (!data) return (
@@ -42,11 +43,10 @@ const Sidebar: React.FC<SidebarProps> = ({ data, selectedId, onSelect }) => {
               <button
                 key={entity.id}
                 onClick={() => onSelect(entity.id)}
-                className={`w-full text-left px-4 py-2 text-xs flex items-center gap-2 transition-colors border-l-2 ${
-                  selectedId === entity.id 
-                  ? 'bg-blue-900/20 text-blue-400 border-blue-500' 
+                className={`w-full text-left px-4 py-2 text-xs flex items-center gap-2 transition-colors border-l-2 ${selectedId === entity.id
+                  ? 'bg-blue-900/20 text-blue-400 border-blue-500'
                   : 'text-gray-400 border-transparent hover:bg-[#2c2c2c] hover:text-gray-200'
-                }`}
+                  }`}
               >
                 {getEntityIcon(entity.type)}
                 <span className="truncate">{entity.type}</span>
@@ -59,4 +59,5 @@ const Sidebar: React.FC<SidebarProps> = ({ data, selectedId, onSelect }) => {
   );
 };
 
-export default Sidebar;
+export default React.memo(Sidebar);
+

@@ -7,6 +7,7 @@ interface SidebarProps {
   data: DxfData | null;
   selectedIds: string[];
   onSelect: (id: string) => void;
+  onLayerSelect: (layer: string) => void;
 }
 
 // Pre-created icon elements - same reference avoids DOM recreation
@@ -20,7 +21,7 @@ const ENTITY_ICONS: Record<string, React.ReactNode> = {
 
 const getEntityIcon = (type: string) => ENTITY_ICONS[type] || ENTITY_ICONS.DEFAULT;
 
-const Sidebar: React.FC<SidebarProps> = ({ data, selectedIds, onSelect }) => {
+const Sidebar: React.FC<SidebarProps> = ({ data, selectedIds, onSelect, onLayerSelect }) => {
   if (!data) return (
     <div className="w-64 bg-[#1e1e1e] border-r border-[#333] flex flex-col items-center justify-center p-8 text-center">
       <Layers className="text-gray-700 mb-4" size={48} />
@@ -36,9 +37,12 @@ const Sidebar: React.FC<SidebarProps> = ({ data, selectedIds, onSelect }) => {
       <div className="flex-1 overflow-y-auto">
         {data.layers.map(layer => (
           <div key={layer}>
-            <div className="px-3 py-2 bg-[#252525] text-xs font-semibold text-gray-500 border-y border-[#333]">
+            <button
+              onClick={() => onLayerSelect(layer)}
+              className="w-full text-left px-3 py-2 bg-[#252525] hover:bg-[#2a2a2a] text-[10px] font-bold text-gray-500 hover:text-gray-300 border-y border-[#333] transition-colors uppercase tracking-tight"
+            >
               {layer}
-            </div>
+            </button>
             {data.entities.filter(e => e.layer === layer).map(entity => (
               <button
                 key={entity.id}

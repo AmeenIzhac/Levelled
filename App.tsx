@@ -10,9 +10,9 @@ import Sidebar from './components/Sidebar';
 import PropertiesPanel from './components/PropertiesPanel';
 import Canvas from './components/Canvas';
 
-scan({
-  enabled: true
-});
+// scan({
+//   enabled: true
+// });
 
 const DEFAULT_DATA: DxfData = {
   entities: [],
@@ -53,7 +53,16 @@ const App: React.FC = () => {
   const [data, setData] = useState<DxfData>(DEFAULT_DATA);
   const [viewport, setViewport] = useState<ViewportState>(getStandardViewport);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [sectioningStep, setSectioningStep] = useState<'none' | 'RoadEdge' | 'PavementEdge'>('none');
+  const [sectioningStep, setSectioningStep] = useState<string>('none');
+  const [driveCount, setDriveCount] = useState(0);
+  const [drivePrompt, setDrivePrompt] = useState<'initial' | 'another' | null>(null);
+  const [pathCount, setPathCount] = useState(0);
+  const [pathPrompt, setPathPrompt] = useState<'initial' | 'another' | null>(null);
+  const [houseCount, setHouseCount] = useState(0);
+  const [housePrompt, setHousePrompt] = useState<'initial' | 'another' | null>(null);
+  const [houseGroupCount, setHouseGroupCount] = useState(0);
+  const [houseGroupPrompt, setHouseGroupPrompt] = useState<'initial' | 'another' | null>(null);
+  const [sectioningHistory, setSectioningHistory] = useState<any[]>([]);
   const isSectioning = sectioningStep !== 'none';
   const [tool, setTool] = useState<DrawingTool>('select');
   const [fileName, setFileName] = useState<string | null>(null);
@@ -213,11 +222,45 @@ const App: React.FC = () => {
     }
   };
 
+  const handleLayerSelect = useCallback((layerName: string) => {
+    const layerEntities = data.entities.filter(e => e.layer === layerName).map(e => e.id);
+
+    if (sectioningStep !== 'none') {
+      setSelectedIds(prev => {
+        const alreadySelected = layerEntities.every(id => prev.includes(id));
+        if (alreadySelected) {
+          // Deselect all entities of this layer
+          return prev.filter(id => !layerEntities.includes(id));
+        } else {
+          // Select all entities of this layer (add missing ones)
+          return Array.from(new Set([...prev, ...layerEntities]));
+        }
+      });
+    } else {
+      setSelectedIds(layerEntities);
+    }
+  }, [data.entities, sectioningStep]);
+
   const handleConfirmSectioning = () => {
     if (selectedIds.length === 0) {
       alert("Please select at least one entity.");
       return;
     }
+
+    // History management
+    setSectioningHistory(prev => [...prev, {
+      data,
+      sectioningStep,
+      driveCount,
+      pathCount,
+      houseCount,
+      houseGroupCount,
+      selectedIds,
+      drivePrompt,
+      pathPrompt,
+      housePrompt,
+      houseGroupPrompt
+    }]);
 
     const currentLayer = sectioningStep;
 
@@ -232,9 +275,117 @@ const App: React.FC = () => {
     if (sectioningStep === 'RoadEdge') {
       setSectioningStep('PavementEdge');
       setSelectedIds([]);
+    } else if (sectioningStep === 'PavementEdge') {
+      setDrivePrompt('initial');
+      setSelectedIds([]);
+    } else if (sectioningStep.startsWith('Drive')) {
+      setDrivePrompt('another');
+      setSelectedIds([]);
+    } else if (sectioningStep.startsWith('Path')) {
+      setPathPrompt('another');
+      setSelectedIds([]);
+    } else if (sectioningStep.startsWith('House')) {
+      setHousePrompt('another');
+      setSelectedIds([]);
+    } else if (sectioningStep.startsWith('HouseGroup')) {
+      setHouseGroupPrompt('another');
+      setSelectedIds([]);
     } else {
       setSectioningStep('none');
       setSelectedIds([]);
+      setSectioningHistory([]);
+    }
+  };
+
+  const handleGoBack = () => {
+    if (sectioningHistory.length === 0) return;
+
+    const lastState = sectioningHistory[sectioningHistory.length - 1];
+    setSectioningHistory(prev => prev.slice(0, -1));
+
+    setData(lastState.data);
+    setSectioningStep(lastState.sectioningStep);
+    setDriveCount(lastState.driveCount);
+    setPathCount(lastState.pathCount);
+    setHouseCount(lastState.houseCount);
+    setHouseGroupCount(lastState.houseGroupCount);
+    setSelectedIds(lastState.selectedIds);
+    setDrivePrompt(lastState.drivePrompt);
+    setPathPrompt(lastState.pathPrompt);
+    setHousePrompt(lastState.housePrompt);
+    setHouseGroupPrompt(lastState.houseGroupPrompt);
+  };
+
+  const handleDrivePromptResponse = (hasDrives: boolean) => {
+    setSectioningHistory(prev => [...prev, {
+      data, sectioningStep, driveCount, pathCount, houseCount, houseGroupCount, selectedIds,
+      drivePrompt, pathPrompt, housePrompt, houseGroupPrompt
+    }]);
+
+    if (hasDrives) {
+      const nextDriveNum = driveCount + 1;
+      setDriveCount(nextDriveNum);
+      setSectioningStep(`Drive${nextDriveNum}`);
+      setDrivePrompt(null);
+    } else {
+      setDrivePrompt(null);
+      setPathPrompt('initial');
+    }
+  };
+
+  const handlePathPromptResponse = (hasPaths: boolean) => {
+    setSectioningHistory(prev => [...prev, {
+      data, sectioningStep, driveCount, pathCount, houseCount, houseGroupCount, selectedIds,
+      drivePrompt, pathPrompt, housePrompt, houseGroupPrompt
+    }]);
+
+    if (hasPaths) {
+      const nextPathNum = pathCount + 1;
+      setPathCount(nextPathNum);
+      setSectioningStep(`Path${nextPathNum}`);
+      setPathPrompt(null);
+    } else {
+      setPathPrompt(null);
+      setHousePrompt('initial');
+    }
+  };
+
+  const handleHousePromptResponse = (hasHouses: boolean) => {
+    setSectioningHistory(prev => [...prev, {
+      data, sectioningStep, driveCount, pathCount, houseCount, houseGroupCount, selectedIds,
+      drivePrompt, pathPrompt, housePrompt, houseGroupPrompt
+    }]);
+
+    if (hasHouses) {
+      const nextHouseNum = houseCount + 1;
+      setHouseCount(nextHouseNum);
+      setSectioningStep(`House${nextHouseNum}`);
+      setHousePrompt(null);
+    } else {
+      setHousePrompt(null);
+      setHouseGroupPrompt('initial');
+    }
+  };
+
+  const handleHouseGroupPromptResponse = (hasHouseGroups: boolean) => {
+    setSectioningHistory(prev => [...prev, {
+      data, sectioningStep, driveCount, pathCount, houseCount, houseGroupCount, selectedIds,
+      drivePrompt, pathPrompt, housePrompt, houseGroupPrompt
+    }]);
+
+    if (hasHouseGroups) {
+      const nextHouseGroupNum = houseGroupCount + 1;
+      setHouseGroupCount(nextHouseGroupNum);
+      setSectioningStep(`HouseGroup${nextHouseGroupNum}`);
+      setHouseGroupPrompt(null);
+    } else {
+      setSectioningStep('none');
+      setHouseGroupPrompt(null);
+      setHouseGroupCount(0);
+      setHouseCount(0);
+      setPathCount(0);
+      setDriveCount(0);
+      setSectioningHistory([]);
     }
   };
 
@@ -254,6 +405,15 @@ const App: React.FC = () => {
           setSectioningStep('RoadEdge');
           setSelectedIds([]);
           setTool('select');
+          setDriveCount(0);
+          setDrivePrompt(null);
+          setPathCount(0);
+          setPathPrompt(null);
+          setHouseCount(0);
+          setHousePrompt(null);
+          setHouseGroupCount(0);
+          setHouseGroupPrompt(null);
+          setSectioningHistory([]);
         }}
       />
       <div className="flex-1 flex overflow-hidden">
@@ -261,6 +421,7 @@ const App: React.FC = () => {
           data={data}
           selectedIds={selectedIds}
           onSelect={handleSidebarSelect}
+          onLayerSelect={handleLayerSelect}
         />
         <Canvas
           data={data} viewport={viewport} setViewport={setViewport}
@@ -283,19 +444,51 @@ const App: React.FC = () => {
           layerTrueColors={data.layerTrueColors}
         />
       </div>
-      {isSectioning && (
+      {isSectioning && !drivePrompt && !pathPrompt && !housePrompt && !houseGroupPrompt && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 bg-[#1e1e1e] border border-orange-500/50 rounded-xl px-6 py-4 shadow-2xl z-[80] flex items-center gap-6 animate-in slide-in-from-top-4 duration-300">
           <div className="flex flex-col">
             <span className="text-orange-400 font-bold text-sm tracking-wider uppercase">
-              Sectioning Mode: {sectioningStep === 'RoadEdge' ? 'Road' : 'Pavement'}
+              Sectioning Mode: {
+                sectioningStep === 'RoadEdge' ? 'Road' :
+                  sectioningStep === 'PavementEdge' ? 'Pavement' :
+                    sectioningStep.startsWith('HouseGroup') ? 'House Group' :
+                      sectioningStep
+              }
             </span>
             <span className="text-gray-300 text-xs">
-              Select the {sectioningStep === 'RoadEdge' ? 'road' : 'pavement'} edge and press confirm
+              Select the {
+                sectioningStep === 'RoadEdge' ? 'road' :
+                  sectioningStep === 'PavementEdge' ? 'pavement' :
+                    sectioningStep.startsWith('Drive') ? 'drive' :
+                      sectioningStep.startsWith('Path') ? 'path' :
+                        sectioningStep.startsWith('HouseGroup') ? 'house group' :
+                          'house'
+              } edge and press confirm
             </span>
           </div>
           <div className="flex items-center gap-2">
+            {sectioningHistory.length > 0 && (
+              <button
+                onClick={handleGoBack}
+                className="px-4 py-2 bg-[#2c2c2c] hover:bg-[#3c3c3c] text-orange-400 text-xs font-bold rounded-md transition-colors border border-orange-500/20"
+              >
+                Go Back
+              </button>
+            )}
             <button
-              onClick={() => { setSectioningStep('none'); setSelectedIds([]); }}
+              onClick={() => {
+                setSectioningStep('none');
+                setSelectedIds([]);
+                setDriveCount(0);
+                setDrivePrompt(null);
+                setPathCount(0);
+                setPathPrompt(null);
+                setHouseCount(0);
+                setHousePrompt(null);
+                setHouseGroupCount(0);
+                setHouseGroupPrompt(null);
+                setSectioningHistory([]);
+              }}
               className="px-4 py-2 bg-[#2c2c2c] hover:bg-[#3c3c3c] text-gray-300 text-xs font-bold rounded-md transition-colors border border-[#444]"
             >
               Cancel
@@ -304,7 +497,132 @@ const App: React.FC = () => {
               onClick={handleConfirmSectioning}
               className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold rounded-md transition-colors shadow-lg active:scale-95"
             >
-              Confirm {sectioningStep === 'RoadEdge' ? 'Road' : 'Pavement'} ({selectedIds.length})
+              Confirm {
+                sectioningStep === 'RoadEdge' ? 'Road' :
+                  sectioningStep === 'PavementEdge' ? 'Pavement' :
+                    sectioningStep.startsWith('Drive') ? 'Drive' :
+                      sectioningStep.startsWith('Path') ? 'Path' :
+                        sectioningStep.startsWith('HouseGroup') ? 'Group' :
+                          'House'
+              } ({selectedIds.length})
+            </button>
+          </div>
+        </div>
+      )}
+      {drivePrompt && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] animate-in fade-in duration-200">
+          <div className="bg-[#1e1e1e] border border-orange-500/30 rounded-xl p-8 shadow-2xl max-w-sm w-full animate-in zoom-in-95 duration-200">
+            <h3 className="text-orange-400 font-bold text-lg mb-2">
+              {drivePrompt === 'initial' ? 'Drives' : 'Another Drive?'}
+            </h3>
+            <p className="text-gray-300 text-sm mb-6 leading-relaxed">
+              {drivePrompt === 'initial'
+                ? 'Are there any drives to select for this section?'
+                : 'Would you like to add another drive to this section?'}
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => handleDrivePromptResponse(false)}
+                className="flex-1 py-2.5 bg-[#2c2c2c] hover:bg-[#3c3c3c] text-gray-300 text-xs font-bold rounded-lg transition-all border border-[#444] active:scale-95"
+              >
+                No
+              </button>
+              <button
+                onClick={() => handleDrivePromptResponse(true)}
+                className="flex-1 py-2.5 bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold rounded-lg transition-all shadow-lg shadow-orange-900/20 active:scale-95"
+              >
+                Yes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {pathPrompt && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] animate-in fade-in duration-200">
+          <div className="bg-[#1e1e1e] border border-orange-500/30 rounded-xl p-8 shadow-2xl max-w-sm w-full animate-in zoom-in-95 duration-200">
+            <h3 className="text-orange-400 font-bold text-lg mb-2">
+              {pathPrompt === 'initial' ? 'Paths' : 'Another Path?'}
+            </h3>
+            <p className="text-gray-300 text-sm mb-6 leading-relaxed">
+              {pathPrompt === 'initial'
+                ? 'Are there any paths to select for this section?'
+                : 'Would you like to add another path to this section?'}
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => handlePathPromptResponse(false)}
+                className="flex-1 py-2.5 bg-[#2c2c2c] hover:bg-[#3c3c3c] text-gray-300 text-xs font-bold rounded-lg transition-all border border-[#444] active:scale-95"
+              >
+                No
+              </button>
+              <button
+                onClick={() => handlePathPromptResponse(true)}
+                className="flex-1 py-2.5 bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold rounded-lg transition-all shadow-lg shadow-orange-900/20 active:scale-95"
+              >
+                Yes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {housePrompt && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] animate-in fade-in duration-200">
+          <div className="bg-[#1e1e1e] border border-orange-500/30 rounded-xl p-8 shadow-2xl max-w-sm w-full animate-in zoom-in-95 duration-200">
+            <h3 className="text-orange-400 font-bold text-lg mb-2">
+              {housePrompt === 'initial' ? 'Houses' : 'Another House?'}
+            </h3>
+            <p className="text-gray-300 text-sm mb-6 leading-relaxed">
+              {housePrompt === 'initial'
+                ? 'Are there any houses to select for this section?'
+                : 'Would you like to add another house to this section?'}
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => handleHousePromptResponse(false)}
+                className="flex-1 py-2.5 bg-[#2c2c2c] hover:bg-[#3c3c3c] text-gray-300 text-xs font-bold rounded-lg transition-all border border-[#444] active:scale-95"
+              >
+                No
+              </button>
+              <button
+                onClick={() => handleHousePromptResponse(true)}
+                className="flex-1 py-2.5 bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold rounded-lg transition-all shadow-lg shadow-orange-900/20 active:scale-95"
+              >
+                Yes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {houseGroupPrompt && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] animate-in fade-in duration-200">
+          <div className="bg-[#1e1e1e] border border-orange-500/30 rounded-xl p-8 shadow-2xl max-w-sm w-full animate-in zoom-in-95 duration-200">
+            <h3 className="text-orange-400 font-bold text-lg mb-2">
+              {houseGroupPrompt === 'initial' ? 'House Groups' : 'Another Group?'}
+            </h3>
+            <p className="text-gray-300 text-sm mb-6 leading-relaxed">
+              {houseGroupPrompt === 'initial'
+                ? 'Would you like to define any house groups now?'
+                : 'Would you like to add another house group?'}
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => handleHouseGroupPromptResponse(false)}
+                className="flex-1 py-2.5 bg-[#2c2c2c] hover:bg-[#3c3c3c] text-gray-300 text-xs font-bold rounded-lg transition-all border border-[#444] active:scale-95"
+              >
+                No
+              </button>
+              <button
+                onClick={() => handleHouseGroupPromptResponse(true)}
+                className="flex-1 py-2.5 bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold rounded-lg transition-all shadow-lg shadow-orange-900/20 active:scale-95"
+              >
+                Yes
+              </button>
+            </div>
+            <button
+              onClick={handleGoBack}
+              className="w-full mt-4 text-[10px] text-gray-500 hover:text-orange-400 underline transition-colors"
+            >
+              Go Back to previous step
             </button>
           </div>
         </div>

@@ -6,7 +6,7 @@ interface CanvasProps {
     data: DxfData;
     viewport: ViewportState;
     setViewport: React.Dispatch<React.SetStateAction<ViewportState>>;
-    selectedId: string | null;
+    selectedIds: string[];
     onSelect: (id: string) => void;
     tool: DrawingTool;
     onAddEntity: (entity: DxfEntity) => void;
@@ -26,7 +26,7 @@ const Canvas: React.FC<CanvasProps> = ({
     data,
     viewport,
     setViewport,
-    selectedId,
+    selectedIds,
     onSelect,
     tool,
     onAddEntity
@@ -198,7 +198,7 @@ const Canvas: React.FC<CanvasProps> = ({
 
         // 3. Draw Entities
         const renderEntityCtx = (e: DxfEntity, isGhost: boolean = false) => {
-            const isSelected = selectedId === e.id;
+            const isSelected = selectedIds.includes(e.id);
             const isHovered = hoveredId === e.id;
 
             let color = isSelected
@@ -325,7 +325,7 @@ const Canvas: React.FC<CanvasProps> = ({
             }
         }
 
-    }, [data, viewport, selectedId, hoveredId, drawingStart, cursorWorldPos, tool]);
+    }, [data, viewport, selectedIds, hoveredId, drawingStart, cursorWorldPos, tool]);
 
     // Zoom and pan handler
     useEffect(() => {

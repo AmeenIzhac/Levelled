@@ -14,6 +14,9 @@ interface ToolbarProps {
   onExportJSON: () => void;
   onViewJSON: () => void;
   fileName: string | null;
+  isSectioning: boolean;
+  onStartSectioning: () => void;
+  showSectioningButton: boolean;
 }
 
 const Toolbar: React.FC<ToolbarProps> = ({
@@ -23,7 +26,10 @@ const Toolbar: React.FC<ToolbarProps> = ({
   onClear,
   onExportJSON,
   onViewJSON,
-  fileName
+  fileName,
+  isSectioning,
+  onStartSectioning,
+  showSectioningButton
 }) => {
   return (
     <div className="h-12 bg-[#1e1e1e] border-b border-[#333] flex items-center justify-between px-4 z-50">
@@ -99,6 +105,18 @@ const Toolbar: React.FC<ToolbarProps> = ({
           <Eye size={14} />
           View JSON
         </button>
+        {showSectioningButton && (
+          <button
+            onClick={onStartSectioning}
+            disabled={isSectioning}
+            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${isSectioning
+                ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30 cursor-default'
+                : 'bg-orange-600 hover:bg-orange-700 text-white shadow-lg active:scale-95'
+              }`}
+          >
+            {isSectioning ? 'Sectioning Active' : 'Start Sectioning'}
+          </button>
+        )}
         <button
           onClick={onExportJSON}
           className="flex items-center gap-2 bg-[#2c2c2c] hover:bg-[#3c3c3c] text-gray-300 px-3 py-1.5 rounded-md text-xs font-medium cursor-pointer transition-colors border border-[#444]"

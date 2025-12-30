@@ -5,7 +5,7 @@ import { DxfData, DxfEntity } from '../types';
 
 interface SidebarProps {
   data: DxfData | null;
-  selectedId: string | null;
+  selectedIds: string[];
   onSelect: (id: string) => void;
 }
 
@@ -20,7 +20,7 @@ const ENTITY_ICONS: Record<string, React.ReactNode> = {
 
 const getEntityIcon = (type: string) => ENTITY_ICONS[type] || ENTITY_ICONS.DEFAULT;
 
-const Sidebar: React.FC<SidebarProps> = ({ data, selectedId, onSelect }) => {
+const Sidebar: React.FC<SidebarProps> = ({ data, selectedIds, onSelect }) => {
   if (!data) return (
     <div className="w-64 bg-[#1e1e1e] border-r border-[#333] flex flex-col items-center justify-center p-8 text-center">
       <Layers className="text-gray-700 mb-4" size={48} />
@@ -43,7 +43,7 @@ const Sidebar: React.FC<SidebarProps> = ({ data, selectedId, onSelect }) => {
               <button
                 key={entity.id}
                 onClick={() => onSelect(entity.id)}
-                className={`w-full text-left px-4 py-2 text-xs flex items-center gap-2 transition-colors border-l-2 ${selectedId === entity.id
+                className={`w-full text-left px-4 py-2 text-xs flex items-center gap-2 transition-colors border-l-2 ${selectedIds.includes(entity.id)
                   ? 'bg-blue-900/20 text-blue-400 border-blue-500'
                   : 'text-gray-400 border-transparent hover:bg-[#2c2c2c] hover:text-gray-200'
                   }`}
